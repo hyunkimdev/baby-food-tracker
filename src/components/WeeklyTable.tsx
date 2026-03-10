@@ -98,6 +98,7 @@ interface WeeklyTableProps {
   onCellSelect: (date: string, mealType: MealType) => void;
   onRemoveOne: (id: string) => void;
   onDefrost: (meal: Meal) => void;
+  onUndoDefrost: (meal: Meal) => void;
   comboResults: CombinationResult[];
   comboLoading: boolean;
   settingsButton?: React.ReactNode;
@@ -105,7 +106,7 @@ interface WeeklyTableProps {
 
 export default function WeeklyTable({
   meals, selections, cubeMap, activeDate, activeMealType, hiddenMealTypes,
-  onCellSelect, onRemoveOne, onDefrost, comboResults, comboLoading,
+  onCellSelect, onRemoveOne, onDefrost, onUndoDefrost, comboResults, comboLoading,
   settingsButton,
 }: WeeklyTableProps) {
   const visibleMealTypes = MEAL_TYPES.filter(mt => !hiddenMealTypes.includes(mt));
@@ -203,6 +204,8 @@ export default function WeeklyTable({
     const meal = mealLookup.get(`${date}__${mealType}`);
     if (!meal) return null;
 
+    const isUsed = meal.status === 'used';
+
     const categoryCubes = meal.cubes.filter(cu => {
       if (cu.category) return cu.category === category;
       if (cu.cubeId) {
@@ -214,7 +217,7 @@ export default function WeeklyTable({
 
     if (categoryCubes.length === 0) return null;
     return (
-      <div className="flex flex-wrap gap-1 items-center py-0.5">
+      <div className={`flex flex-wrap gap-1 items-center py-0.5 ${isUsed ? 'opacity-50' : ''}`}>
         {categoryCubes.map((cu, i) => (
           <CubeChip key={i} name={cu.name}>
             {Array.from({ length: cu.quantity }).map((_, j) => (
@@ -384,8 +387,14 @@ export default function WeeklyTable({
                                 사용
                               </button>
                             )}
-                            {isUsed && (
-                              <span className="text-[10px] text-green-500 font-bold">✓</span>
+                            {isUsed && meal && (
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); onUndoDefrost(meal); }}
+                                className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-400 text-white hover:bg-gray-500 transition-colors"
+                              >
+                                사용 취소
+                              </button>
                             )}
                           </div>
                         )}

@@ -98,6 +98,46 @@ export async function deleteCube(id: string): Promise<void> {
   if (error) throw error;
 }
 
+export async function incrementOrCreateCube(
+  cubeId: string,
+  amount: number,
+  fallback: { name: string; weight: number; color: string; category: string; itemType?: string },
+): Promise<Cube> {
+  // Try to find existing cube
+  const { data: existing } = await getSupabase()
+    .from('cubes')
+    .select('quantity')
+    .eq('id', cubeId)
+    .single();
+
+  if (existing) {
+    const newQty = (existing as { quantity: number }).quantity + amount;
+    return updateCube(cubeId, { quantity: newQty });
+  }
+
+  // Cube was deleted — re-create it
+  const { data: row, error } = await getSupabase()
+    .from('cubes')
+    .insert({
+      id: cubeId,
+      name: fallback.name,
+      weight: fallback.weight,
+      quantity: amount,
+      color: fallback.color,
+      category: fallback.category,
+      storage: 'freezer',
+      min_quantity: 0,
+      expiry_date: null,
+      made_date: null,
+      item_type: fallback.itemType ?? 'cube',
+    })
+    .select()
+    .single();
+
+  if (error) throw error;
+  return rowToCube(row as CubeRow);
+}
+
 export async function decrementCubeQuantity(id: string, amount: number): Promise<Cube | null> {
   const { data: current, error: fetchError } = await getSupabase()
     .from('cubes')

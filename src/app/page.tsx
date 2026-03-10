@@ -254,9 +254,13 @@ export default function HomePage() {
       const dropDate = parts[1];
       const dropMealType = parts[2] as MealType;
 
+      // Block drops onto used meals
+      const dropTargetMeal = (meals ?? []).find(m => m.date === dropDate && m.mealType === dropMealType);
+      if (dropTargetMeal?.status === 'used') return;
+
       if (dropDate !== dateRef.current || dropMealType !== mealTypeRef.current) {
         // Switch to target slot
-        const existingMeal = (meals ?? []).find(m => m.date === dropDate && m.mealType === dropMealType);
+        const existingMeal = dropTargetMeal;
         let newSelections: Record<string, number>;
         let newMealId: string | null;
         let newMemo: string;
@@ -300,6 +304,10 @@ export default function HomePage() {
     if (cellDate === dateRef.current && cellMealType === mealTypeRef.current) return;
 
     const existingMeal = (meals ?? []).find(m => m.date === cellDate && m.mealType === cellMealType);
+    if (existingMeal && existingMeal.status === 'used') {
+      // Used meals are locked — cannot edit
+      return;
+    }
     if (existingMeal) {
       setEditingMealId(existingMeal.id);
       setDate(existingMeal.date);
@@ -329,10 +337,32 @@ export default function HomePage() {
         body: JSON.stringify({ action: 'defrost', id: meal.id, cubes: meal.cubes }),
       });
       if (!res.ok) throw new Error('Failed');
+      // If the active cell is this meal, deselect it so it becomes locked
+      if (editingMealIdRef.current === meal.id) {
+        setEditingMealId(null);
+        setSelections({});
+        setMemo('');
+        setComboResults([]);
+      }
       mutateCubes();
       mutateMeals();
     } catch {
-      alert('해동에 실패했어요. 다시 시도해주세요.');
+      alert('사용 처리에 실패했어요. 다시 시도해주세요.');
+    }
+  }, [mutateCubes, mutateMeals]);
+
+  const handleUndoDefrost = useCallback(async (meal: Meal) => {
+    try {
+      const res = await fetch('/api/meals', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'undo-defrost', id: meal.id, cubes: meal.cubes }),
+      });
+      if (!res.ok) throw new Error('Failed');
+      mutateCubes();
+      mutateMeals();
+    } catch {
+      alert('사용 취소에 실패했어요. 다시 시도해주세요.');
     }
   }, [mutateCubes, mutateMeals]);
 
@@ -368,6 +398,7 @@ export default function HomePage() {
           onCellSelect={handleCellSelect}
           onRemoveOne={removeOneAndSave}
           onDefrost={handleDefrost}
+          onUndoDefrost={handleUndoDefrost}
           comboResults={comboResults}
           comboLoading={comboLoading}
         />

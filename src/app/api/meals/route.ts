@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getMeals, createMeal, updateMeal, setMealStatus } from '@/lib/supabase-meals';
-import { decrementCubeQuantity } from '@/lib/supabase-cubes';
+import { decrementCubeQuantity, incrementOrCreateCube } from '@/lib/supabase-cubes';
 import type { CubeUsage, MealType } from '@/types';
 
 export async function GET() {
@@ -37,6 +37,22 @@ export async function PATCH(request: Request) {
         await decrementCubeQuantity(cube.cubeId, cube.quantity);
       }
       const meal = await setMealStatus(id, 'used');
+      return NextResponse.json(meal);
+    }
+
+    // Undo-defrost action: restore cubes and mark as planned
+    if (body.action === 'undo-defrost') {
+      const { id, cubes } = body as { id: string; cubes: CubeUsage[] };
+      for (const cube of cubes) {
+        await incrementOrCreateCube(cube.cubeId, cube.quantity, {
+          name: cube.name,
+          weight: cube.weight,
+          color: cube.color,
+          category: cube.category ?? '곡류',
+          itemType: cube.itemType,
+        });
+      }
+      const meal = await setMealStatus(id, 'planned');
       return NextResponse.json(meal);
     }
 
