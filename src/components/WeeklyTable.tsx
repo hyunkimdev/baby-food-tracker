@@ -338,21 +338,21 @@ export default function WeeklyTable({
                     const isHovered = hoverSlot === `${date}__${mt}`;
                     const meal = mealLookup.get(`${date}__${mt}`);
 
-                    // Compute total weight
+                    // Compute total weight: use selections for active cell, otherwise use saved meal
                     let totalWeight = 0;
-                    let hasMeal = false;
                     if (isActive) {
                       totalWeight = Object.entries(selections).reduce((sum, [id, qty]) => {
                         if (qty <= 0) return sum;
                         const cube = cubeMap.get(id);
                         return sum + (cube ? cube.weight * qty : 0);
                       }, 0);
-                      hasMeal = totalWeight > 0;
                     } else if (meal) {
                       totalWeight = meal.totalWeight;
-                      hasMeal = true;
                     }
 
+                    const hasCubes = isActive
+                      ? Object.values(selections).some(q => q > 0)
+                      : (meal != null && meal.cubes.length > 0 && meal.totalWeight > 0);
                     const isPlanned = meal?.status === 'planned';
                     const isUsed = meal?.status === 'used';
                     const cellHighlight = isHovered
@@ -370,12 +370,12 @@ export default function WeeklyTable({
                         className={`border-r border-gray-200 border-b-2 px-1.5 py-0.5 text-center ${cellHighlight} ${leftHL} ${rightHL}`}
                         style={{ height: 28 }}
                       >
-                        {hasMeal && (
+                        {hasCubes && (
                           <div className="flex items-center justify-center gap-1">
                             <span className={`text-[11px] font-bold ${isUsed ? 'text-gray-400' : 'text-gray-600'}`}>
                               {totalWeight}g
                             </span>
-                            {isPlanned && !isActive && meal && (
+                            {isPlanned && meal && (
                               <button
                                 type="button"
                                 onClick={(e) => { e.stopPropagation(); onDefrost(meal); }}
