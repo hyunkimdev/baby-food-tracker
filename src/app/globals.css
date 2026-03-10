@@ -1,0 +1,22 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Noto Sans KR', sans-serif;
+}
+
+.bar-label {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  white-space: nowrap;
+  font-size: 0.75rem;
+}
+
+@media (min-width: 640px) {
+  .bar-label {
+    writing-mode: horizontal-tb;
+    text-orientation: initial;
+    transform: rotate(-45deg);
+    transform-origin: top left;
+  }
+}
