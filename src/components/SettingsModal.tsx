@@ -6,23 +6,25 @@ import { motion, AnimatePresence } from 'framer-motion';
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onCategoryColorsChange?: () => void;
 }
 
-import type { MealType } from '@/types';
+import type { MealType, CubeCategory } from '@/types';
+import { CATEGORIES, CATEGORY_EMOJI, CATEGORY_COLORS as DEFAULT_CATEGORY_COLORS } from '@/lib/constants';
 
 const SETTINGS_KEY = 'baby-food-tracker-settings';
 const DEFAULT_MIN_QUANTITY = 2;
 const DEFAULT_EXPIRY_WARN_DAYS = 3;
-const ALL_MEAL_TYPES: MealType[] = ['아침', '점심', '저녁'];
 
 interface Settings {
   minQuantity: number;
   hiddenMealTypes: MealType[];
   expiryWarnDays: number;
+  categoryColors: Record<CubeCategory, string>;
 }
 
 function getSettings(): Settings {
-  if (typeof window === 'undefined') return { minQuantity: DEFAULT_MIN_QUANTITY, hiddenMealTypes: [], expiryWarnDays: DEFAULT_EXPIRY_WARN_DAYS };
+  if (typeof window === 'undefined') return { minQuantity: DEFAULT_MIN_QUANTITY, hiddenMealTypes: [], expiryWarnDays: DEFAULT_EXPIRY_WARN_DAYS, categoryColors: { ...DEFAULT_CATEGORY_COLORS } };
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
     if (raw) {
@@ -31,10 +33,11 @@ function getSettings(): Settings {
         minQuantity: parsed.minQuantity ?? DEFAULT_MIN_QUANTITY,
         hiddenMealTypes: parsed.hiddenMealTypes ?? [],
         expiryWarnDays: parsed.expiryWarnDays ?? DEFAULT_EXPIRY_WARN_DAYS,
+        categoryColors: { ...DEFAULT_CATEGORY_COLORS, ...(parsed.categoryColors ?? {}) },
       };
     }
   } catch {}
-  return { minQuantity: DEFAULT_MIN_QUANTITY, hiddenMealTypes: [], expiryWarnDays: DEFAULT_EXPIRY_WARN_DAYS };
+  return { minQuantity: DEFAULT_MIN_QUANTITY, hiddenMealTypes: [], expiryWarnDays: DEFAULT_EXPIRY_WARN_DAYS, categoryColors: { ...DEFAULT_CATEGORY_COLORS } };
 }
 
 export function getMinQuantity(): number {
@@ -49,10 +52,19 @@ export function getExpiryWarnDays(): number {
   return getSettings().expiryWarnDays;
 }
 
-export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
+export function getCategoryColors(): Record<CubeCategory, string> {
+  return getSettings().categoryColors;
+}
+
+export function getCategoryColor(cat: CubeCategory): string {
+  return getSettings().categoryColors[cat] ?? DEFAULT_CATEGORY_COLORS[cat];
+}
+
+export default function SettingsModal({ isOpen, onClose, onCategoryColorsChange }: SettingsModalProps) {
   const [minQuantity, setMinQuantity] = useState(DEFAULT_MIN_QUANTITY);
   const [hiddenMealTypes, setHiddenMealTypes] = useState<MealType[]>([]);
   const [expiryWarnDays, setExpiryWarnDays] = useState(DEFAULT_EXPIRY_WARN_DAYS);
+  const [categoryColors, setCategoryColors] = useState<Record<CubeCategory, string>>({ ...DEFAULT_CATEGORY_COLORS });
 
   useEffect(() => {
     if (isOpen) {
@@ -60,6 +72,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
       setMinQuantity(s.minQuantity);
       setHiddenMealTypes(s.hiddenMealTypes);
       setExpiryWarnDays(s.expiryWarnDays);
+      setCategoryColors(s.categoryColors);
     }
   }, [isOpen]);
 
@@ -70,7 +83,8 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
   };
 
   const handleSave = () => {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ minQuantity, hiddenMealTypes, expiryWarnDays }));
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ minQuantity, hiddenMealTypes, expiryWarnDays, categoryColors }));
+    onCategoryColorsChange?.();
     onClose();
   };
 
@@ -93,7 +107,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             transition={{ type: 'spring', stiffness: 400, damping: 30 }}
           >
             <div
-              className="relative w-full max-w-sm rounded-2xl bg-white shadow-2xl"
+              className="relative w-full max-w-sm max-h-[90vh] flex flex-col rounded-2xl bg-white shadow-2xl"
               onClick={(e) => e.stopPropagation()}
             >
               <div className="flex items-center justify-between border-b px-5 py-3">
@@ -113,7 +127,7 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                   저장
                 </button>
               </div>
-              <div className="px-5 py-5 space-y-5">
+              <div className="flex-1 overflow-y-auto px-5 py-5 space-y-5">
                 <div>
                   <label className="mb-1.5 block text-sm font-semibold text-gray-700">
                     식단 표시
@@ -141,6 +155,35 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                     })}
                   </div>
                 </div>
+
+                <div>
+                  <label className="mb-1.5 block text-sm font-semibold text-gray-700">
+                    카테고리별 색상
+                  </label>
+                  <p className="mb-2 text-xs text-gray-400">
+                    각 카테고리의 큐브 색상을 설정합니다.
+                  </p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {CATEGORIES.map(cat => (
+                      <label
+                        key={cat}
+                        className="flex items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 cursor-pointer hover:bg-gray-50"
+                      >
+                        <span className="text-sm">{CATEGORY_EMOJI[cat]}</span>
+                        <span className="text-xs font-medium text-gray-700 flex-1">{cat}</span>
+                        <div className="relative h-7 w-7 shrink-0 rounded-full border-2 border-gray-200 overflow-hidden" style={{ backgroundColor: categoryColors[cat] }}>
+                          <input
+                            type="color"
+                            value={categoryColors[cat]}
+                            onChange={(e) => setCategoryColors(prev => ({ ...prev, [cat]: e.target.value }))}
+                            className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                          />
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
                 <div>
                   <label className="mb-1.5 block text-sm font-semibold text-gray-700">
                     최소 수량 (알림 기준)
@@ -181,3 +224,5 @@ export default function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     </AnimatePresence>
   );
 }
+
+const ALL_MEAL_TYPES: MealType[] = ['아침', '점심', '저녁'];

@@ -7,7 +7,7 @@ import type { Cube, CubeFormData, CombinationResult, MealType, Meal, StorageType
 import IngredientShelf from '@/components/IngredientShelf';
 import WeeklyTable from '@/components/WeeklyTable';
 import CubeModal from '@/components/CubeModal';
-import SettingsModal, { getHiddenMealTypes } from '@/components/SettingsModal';
+import SettingsModal, { getHiddenMealTypes, getCategoryColors } from '@/components/SettingsModal';
 import { IconSettings } from '@/components/Icons';
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
@@ -41,6 +41,7 @@ export default function HomePage() {
   const [selectedCubeGroup, setSelectedCubeGroup] = useState<Cube[]>([]);
   const [defaultCategory, setDefaultCategory] = useState<Cube['category']>('곡류');
   const [defaultStorage, setDefaultStorage] = useState<StorageType>('freezer');
+  const [portionSource, setPortionSource] = useState<Cube | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [hiddenMealTypes, setHiddenMealTypes] = useState<MealType[]>([]);
 
@@ -61,13 +62,17 @@ export default function HomePage() {
     setHiddenMealTypes(getHiddenMealTypes());
   }, [settingsOpen]);
 
-  const cubeMap = new Map(cubes?.map((c) => [c.id, c]) ?? []);
+  const categoryColors = getCategoryColors();
+  // Always override cube color with settings category color — single source of truth
+  const cubeMap = new Map(cubes?.map((c) => [c.id, { ...c, color: categoryColors[c.category] ?? c.color }]) ?? []);
   const cubeMapRef = useRef(cubeMap);
   cubeMapRef.current = cubeMap;
 
+  // Get ingredient names from selections — fallback to saved meal data for used meals (cubes may be deleted)
+  const currentMeal = (meals ?? []).find(m => m.date === date && m.mealType === mealType);
   const selectedNames = Object.entries(selections)
     .filter(([, qty]) => qty > 0)
-    .map(([id]) => cubeMap.get(id)?.name)
+    .map(([id]) => cubeMap.get(id)?.name ?? currentMeal?.cubes.find(c => c.cubeId === id)?.name)
     .filter(Boolean) as string[];
 
   useEffect(() => {
@@ -95,10 +100,12 @@ export default function HomePage() {
   ): Promise<string | null> => {
     const cubeEntries = Object.entries(newSelections).filter(([, qty]) => qty > 0);
 
-    const selectedCubes = cubeEntries.map(([id, qty]) => {
-      const cube = cubeMapRef.current.get(id)!;
-      return { cubeId: id, name: cube.name, weight: cube.weight, quantity: qty, color: cube.color, category: cube.category, itemType: cube.itemType };
-    });
+    const selectedCubes = cubeEntries
+      .filter(([id]) => cubeMapRef.current.has(id))
+      .map(([id, qty]) => {
+        const cube = cubeMapRef.current.get(id)!;
+        return { cubeId: id, name: cube.name, weight: cube.weight, quantity: qty, color: cube.color, category: cube.category, itemType: cube.itemType };
+      });
     const totalWeight = selectedCubes.reduce((s, c) => s + c.weight * c.quantity, 0);
 
     // Optimistically update SWR cache immediately
@@ -178,9 +185,20 @@ export default function HomePage() {
   };
 
   const handleEditCube = (cube: Cube) => {
-    const group = (cubes ?? []).filter((c) => c.name === cube.name && c.category === cube.category && (c.expiryDate ?? '') === (cube.expiryDate ?? '') && (c.madeDate ?? '') === (cube.madeDate ?? ''));
+    const group = (cubes ?? []).filter((c) => c.name === cube.name && c.category === cube.category && (c.expiryDate ?? '') === (cube.expiryDate ?? ''));
     setSelectedCube(cube);
     setSelectedCubeGroup(group);
+    setPortionSource(null);
+    setModalOpen(true);
+  };
+
+  const handlePortionUse = (cube: Cube) => {
+    // Open modal in "new" mode, pre-filled with portion's data, default to freezer
+    setSelectedCube(null);
+    setSelectedCubeGroup([]);
+    setDefaultCategory(cube.category);
+    setDefaultStorage('freezer');
+    setPortionSource(cube);
     setModalOpen(true);
   };
 
@@ -197,6 +215,20 @@ export default function HomePage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
+    }
+    // If converting from portion, deduct 1 from the source
+    if (portionSource) {
+      const newQty = portionSource.quantity - 1;
+      if (newQty <= 0) {
+        await fetch(`/api/cubes/${portionSource.id}`, { method: 'DELETE' });
+      } else {
+        await fetch(`/api/cubes/${portionSource.id}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ quantity: newQty }),
+        });
+      }
+      setPortionSource(null);
     }
     mutateCubes();
   };
@@ -255,7 +287,7 @@ export default function HomePage() {
       const dropMealType = parts[2] as MealType;
 
       // Block drops onto used meals
-      const dropTargetMeal = (meals ?? []).find(m => m.date === dropDate && m.mealType === dropMealType);
+      const dropTargetMeal = (meals ?? []).filter(m => m.date === dropDate && m.mealType === dropMealType).pop();
       if (dropTargetMeal?.status === 'used') return;
 
       if (dropDate !== dateRef.current || dropMealType !== mealTypeRef.current) {
@@ -303,13 +335,11 @@ export default function HomePage() {
     // If clicking the already active cell, do nothing
     if (cellDate === dateRef.current && cellMealType === mealTypeRef.current) return;
 
-    const existingMeal = (meals ?? []).find(m => m.date === cellDate && m.mealType === cellMealType);
-    if (existingMeal && existingMeal.status === 'used') {
-      // Used meals are locked — cannot edit
-      return;
-    }
+    // Use findLast to match WeeklyTable's mealLookup Map behavior (last entry wins for duplicates)
+    const existingMeal = (meals ?? []).filter(m => m.date === cellDate && m.mealType === cellMealType).pop();
     if (existingMeal) {
-      setEditingMealId(existingMeal.id);
+      // For used meals: don't set editingMealId (read-only), but load selections for combo check
+      setEditingMealId(existingMeal.status === 'used' ? null : existingMeal.id);
       setDate(existingMeal.date);
       setMealType(existingMeal.mealType);
       setMemo(existingMeal.memo);
@@ -337,13 +367,16 @@ export default function HomePage() {
         body: JSON.stringify({ action: 'defrost', id: meal.id, cubes: meal.cubes }),
       });
       if (!res.ok) throw new Error('Failed');
-      // If the active cell is this meal, deselect it so it becomes locked
-      if (editingMealIdRef.current === meal.id) {
-        setEditingMealId(null);
-        setSelections({});
-        setMemo('');
-        setComboResults([]);
-      }
+      // Optimistically mark as used
+      mutateMeals((current) => {
+        if (!current) return current;
+        return current.map(m => m.id === meal.id ? { ...m, status: 'used' as const } : m);
+      }, false);
+      // Deselect editing (cell renders as locked used meal)
+      setEditingMealId(null);
+      setSelections({});
+      setMemo('');
+      setComboResults([]);
       mutateCubes();
       mutateMeals();
     } catch {
@@ -351,7 +384,7 @@ export default function HomePage() {
     }
   }, [mutateCubes, mutateMeals]);
 
-  const handleUndoDefrost = useCallback(async (meal: Meal) => {
+  const handleUnlock = useCallback(async (meal: Meal) => {
     try {
       const res = await fetch('/api/meals', {
         method: 'PATCH',
@@ -359,10 +392,26 @@ export default function HomePage() {
         body: JSON.stringify({ action: 'undo-defrost', id: meal.id, cubes: meal.cubes }),
       });
       if (!res.ok) throw new Error('Failed');
+      // Optimistically mark as planned
+      mutateMeals((current) => {
+        if (!current) return current;
+        return current.map(m => m.id === meal.id ? { ...m, status: 'planned' as const } : m);
+      }, false);
+      // Enter edit mode for this meal
+      setEditingMealId(meal.id);
+      setDate(meal.date);
+      setMealType(meal.mealType);
+      setMemo(meal.memo);
+      const newSelections: Record<string, number> = {};
+      for (const c of meal.cubes) {
+        if (c.cubeId) newSelections[c.cubeId] = c.quantity;
+      }
+      setSelections(newSelections);
+      setComboResults([]);
       mutateCubes();
       mutateMeals();
     } catch {
-      alert('사용 취소에 실패했어요. 다시 시도해주세요.');
+      alert('사용해제에 실패했어요. 다시 시도해주세요.');
     }
   }, [mutateCubes, mutateMeals]);
 
@@ -398,17 +447,18 @@ export default function HomePage() {
           onCellSelect={handleCellSelect}
           onRemoveOne={removeOneAndSave}
           onDefrost={handleDefrost}
-          onUndoDefrost={handleUndoDefrost}
+          onUnlock={handleUnlock}
           comboResults={comboResults}
           comboLoading={comboLoading}
         />
 
         <IngredientShelf
-          cubes={cubes ?? []}
+          cubes={(cubes ?? []).map(c => ({ ...c, color: categoryColors[c.category] ?? c.color }))}
           selections={selections}
           onAddToPlate={addToPlateAndSave}
           onAddCube={handleAddCube}
           onEditCube={handleEditCube}
+          onPortionUse={handlePortionUse}
         />
       </div>
 
@@ -416,11 +466,12 @@ export default function HomePage() {
         cube={selectedCube}
         cubeGroup={selectedCubeGroup}
         isOpen={modalOpen}
-        onClose={() => { setModalOpen(false); setSelectedCube(null); setSelectedCubeGroup([]); }}
+        onClose={() => { setModalOpen(false); setSelectedCube(null); setSelectedCubeGroup([]); setPortionSource(null); }}
         onSave={handleSaveCube}
         onDelete={handleDeleteCube}
         defaultCategory={defaultCategory}
         defaultStorage={defaultStorage}
+        portionSource={portionSource}
       />
       <SettingsModal isOpen={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </DndContext>

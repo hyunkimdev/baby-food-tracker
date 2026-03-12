@@ -33,25 +33,23 @@ export async function PATCH(request: Request) {
     // Defrost action: deduct cubes and mark as used
     if (body.action === 'defrost') {
       const { id, cubes } = body as { id: string; cubes: CubeUsage[] };
-      for (const cube of cubes) {
-        await decrementCubeQuantity(cube.cubeId, cube.quantity);
-      }
+      await Promise.all(cubes.map((cube) => decrementCubeQuantity(cube.cubeId, cube.quantity)));
       const meal = await setMealStatus(id, 'used');
       return NextResponse.json(meal);
     }
 
-    // Undo-defrost action: restore cubes and mark as planned
+    // Undo-defrost / unlock: restore cubes and mark as planned (editable)
     if (body.action === 'undo-defrost') {
       const { id, cubes } = body as { id: string; cubes: CubeUsage[] };
-      for (const cube of cubes) {
-        await incrementOrCreateCube(cube.cubeId, cube.quantity, {
+      await Promise.all(cubes.map((cube) =>
+        incrementOrCreateCube(cube.cubeId, cube.quantity, {
           name: cube.name,
           weight: cube.weight,
           color: cube.color,
           category: cube.category ?? '곡류',
           itemType: cube.itemType,
-        });
-      }
+        })
+      ));
       const meal = await setMealStatus(id, 'planned');
       return NextResponse.json(meal);
     }

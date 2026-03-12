@@ -14,7 +14,7 @@ export const CATEGORY_EMOJI: Record<CubeCategory, string> = {
   '단백질': '🥩',
   '잎채소': '🥬',
   '노란채소': '🥕',
-  '과일': '🍎',
+  '과일': '🍌',
   '유제품': '🥛',
 };
 

@@ -12,6 +12,7 @@ interface IngredientShelfProps {
   onAddToPlate: (id: string) => void;
   onAddCube: (storage: StorageType) => void;
   onEditCube: (cube: Cube) => void;
+  onPortionUse?: (cube: Cube) => void;
 }
 
 
@@ -35,15 +36,17 @@ function DraggableBlock({ cube, index, isUsed, onDoubleClick }: {
       {...listeners}
       {...attributes}
       style={style}
-      onDoubleClick={isUsed || (cube.itemType !== 'cube' && cube.itemType !== 'blw') ? undefined : onDoubleClick}
+      onDoubleClick={isUsed ? undefined : onDoubleClick}
       className={`transition-opacity ${
         isUsed
           ? 'cursor-not-allowed'
           : isDragging
           ? 'shadow-lg opacity-80 cursor-grabbing ring-1 ring-blue-400 rounded-[3px]'
-          : 'cursor-grab hover:opacity-80'
+          : cube.itemType === 'cube' || cube.itemType === 'blw'
+          ? 'cursor-grab hover:opacity-80'
+          : 'cursor-pointer hover:opacity-80'
       }`}
-      title={isUsed ? '식판에 사용 중' : cube.itemType !== 'cube' && cube.itemType !== 'blw' ? '캘린더에 추가 불가' : '더블클릭: 식판으로 이동'}
+      title={isUsed ? '식판에 사용 중' : cube.itemType === 'portion' || cube.itemType === 'raw' ? '더블클릭: 소분하기' : '더블클릭: 식판으로 이동'}
     >
       <CubeBlock color={cube.color} weight={cube.weight} dimmed={isUsed} itemType={cube.itemType} />
     </div>
@@ -72,27 +75,13 @@ function getMostUrgentExpiry(cubes: Cube[]): { status: 'expired' | 'warning' | n
   return { status, label };
 }
 
-function formatMadeLabel(cubes: Cube[]): string | null {
-  // Find earliest made date among cubes
-  let earliest: string | null = null;
-  for (const c of cubes) {
-    if (!c.madeDate) continue;
-    if (!earliest || c.madeDate < earliest) earliest = c.madeDate;
-  }
-  if (!earliest) return null;
-  const diff = -getExpiryDiff(earliest);
-  if (diff <= 0) return '오늘 제조';
-  return `제조 ${diff}일째`;
-}
-
-function ItemCard({ cubes, selections, onAddToPlate, onEdit }: {
-  cubes: Cube[]; selections: Record<string, number>; onAddToPlate: (id: string) => void; onEdit: () => void;
+function ItemCard({ cubes, selections, onAddToPlate, onEdit, onPortionUse }: {
+  cubes: Cube[]; selections: Record<string, number>; onAddToPlate: (id: string) => void; onEdit: () => void; onPortionUse?: (cube: Cube) => void;
 }) {
   const totalQty = cubes.reduce((s, c) => s + c.quantity, 0);
   if (totalQty === 0) return null;
 
   const { status: expiryStatus, label: expiryLabel } = getMostUrgentExpiry(cubes);
-  const madeLabel = formatMadeLabel(cubes);
   const borderColor = expiryStatus === 'expired' ? 'border-red-400' : expiryStatus === 'warning' ? 'border-orange-400' : 'border-gray-200';
 
   return (
@@ -105,9 +94,6 @@ function ItemCard({ cubes, selections, onAddToPlate, onEdit }: {
         >
           {cubes[0].name}
         </button>
-        {madeLabel && (
-          <span className="text-[10px] leading-tight text-gray-400">{madeLabel}</span>
-        )}
         {expiryLabel && (
           <span className={`text-[10px] leading-tight ${expiryStatus === 'expired' ? 'text-red-500 font-bold' : 'text-orange-500'}`}>
             {expiryLabel}
@@ -121,7 +107,13 @@ function ItemCard({ cubes, selections, onAddToPlate, onEdit }: {
           return Array.from({ length: cube.quantity }).map((_, i) => (
             <DraggableBlock
               key={`${cube.id}-${i}`} cube={cube} index={i} isUsed={i >= remaining}
-              onDoubleClick={() => onAddToPlate(cube.id)}
+              onDoubleClick={() => {
+                if ((cube.itemType === 'portion' || cube.itemType === 'raw') && onPortionUse) {
+                  onPortionUse(cube);
+                } else {
+                  onAddToPlate(cube.id);
+                }
+              }}
             />
           ));
         })}
@@ -132,12 +124,12 @@ function ItemCard({ cubes, selections, onAddToPlate, onEdit }: {
 
 function StorageSection({
   title, icon, storageType, cubes, selections, className, droppableId,
-  onAddToPlate, onAddCube, onEditCube,
+  onAddToPlate, onAddCube, onEditCube, onPortionUse,
 }: {
   title: string; icon: React.ReactNode; storageType: StorageType;
   cubes: Cube[]; selections: Record<string, number>; className?: string;
   droppableId: string; onAddToPlate: (id: string) => void;
-  onAddCube: () => void; onEditCube: (cube: Cube) => void;
+  onAddCube: () => void; onEditCube: (cube: Cube) => void; onPortionUse?: (cube: Cube) => void;
 }) {
   const { isOver, setNodeRef } = useDroppable({ id: droppableId });
 
@@ -147,15 +139,28 @@ function StorageSection({
     const catCubes = storageCubes.filter((c) => c.category === cat);
     const byKey = new Map<string, Cube[]>();
     for (const c of catCubes) {
-      const key = `${c.name}__${c.expiryDate ?? ''}__${c.madeDate ?? ''}`;
+      const key = `${c.name}__${c.expiryDate ?? ''}`;
       const list = byKey.get(key) ?? [];
       list.push(c);
       byKey.set(key, list);
     }
-    const typeOrder: Record<string, number> = { blw: 0, cube: 1, portion: 2, raw: 3 };
-    const groups = [...byKey.values()].sort((a, b) =>
-      (typeOrder[a[0].itemType] ?? 9) - (typeOrder[b[0].itemType] ?? 9)
-    );
+    const groups = [...byKey.values()].sort((a, b) => {
+      // Sort by earliest expiry date first (no expiry goes last)
+      const aExp = a.reduce((min: string | null, c) => {
+        if (!c.expiryDate) return min;
+        return !min || c.expiryDate < min ? c.expiryDate : min;
+      }, null);
+      const bExp = b.reduce((min: string | null, c) => {
+        if (!c.expiryDate) return min;
+        return !min || c.expiryDate < min ? c.expiryDate : min;
+      }, null);
+      if (aExp && !bExp) return -1;
+      if (!aExp && bExp) return 1;
+      if (aExp && bExp && aExp !== bExp) return aExp < bExp ? -1 : 1;
+      // Tie-break by type
+      const typeOrder: Record<string, number> = { blw: 0, cube: 1, portion: 2, raw: 3 };
+      return (typeOrder[a[0].itemType] ?? 9) - (typeOrder[b[0].itemType] ?? 9);
+    });
     return { cat, groups };
   });
 
@@ -174,28 +179,39 @@ function StorageSection({
         >+</button>
       </div>
       <div className="p-2.5 space-y-2">
-        {grouped.filter(({ groups }) => groups.length > 0).map(({ cat, groups }) => (
-          <div key={cat}>
-            <p className="mb-1 text-xs font-semibold text-gray-400">
-              {CATEGORY_EMOJI[cat]} {cat}
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {groups.map((cubeGroup) => (
-                <ItemCard
-                  key={`${cubeGroup[0].name}__${cubeGroup[0].expiryDate ?? ''}__${cubeGroup[0].madeDate ?? ''}`} cubes={cubeGroup} selections={selections}
-                  onAddToPlate={onAddToPlate}
-                  onEdit={() => onEditCube(cubeGroup[0])}
-                />
-              ))}
+        {grouped.map(({ cat, groups }) => {
+          // Filter to groups that actually have cubes with quantity > 0
+          const nonEmptyGroups = groups.filter(g => g.reduce((s, c) => s + c.quantity, 0) > 0);
+          return (
+            <div key={cat}>
+              <p className="mb-1 text-xs font-semibold text-gray-400">
+                {CATEGORY_EMOJI[cat]} {cat}
+              </p>
+              {nonEmptyGroups.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5">
+                  {nonEmptyGroups.map((cubeGroup) => (
+                    <ItemCard
+                      key={`${cubeGroup[0].name}__${cubeGroup[0].expiryDate ?? ''}`} cubes={cubeGroup} selections={selections}
+                      onAddToPlate={onAddToPlate}
+                      onEdit={() => onEditCube(cubeGroup[0])}
+                      onPortionUse={onPortionUse}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <div className="inline-flex items-center rounded-lg border border-dashed border-gray-300 bg-gray-50/50 px-3 py-1.5">
+                  <span className="text-[10px] text-gray-300">비어있음</span>
+                </div>
+              )}
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
 }
 
-export default function IngredientShelf({ cubes, selections, onAddToPlate, onAddCube, onEditCube }: IngredientShelfProps) {
+export default function IngredientShelf({ cubes, selections, onAddToPlate, onAddCube, onEditCube, onPortionUse }: IngredientShelfProps) {
   return (
     <div className="grid grid-cols-3 gap-4">
       <StorageSection
@@ -203,18 +219,21 @@ export default function IngredientShelf({ cubes, selections, onAddToPlate, onAdd
         cubes={cubes} selections={selections} className="bg-blue-50/50"
         droppableId="shelf-pantry" onAddToPlate={onAddToPlate}
         onAddCube={() => onAddCube('pantry')} onEditCube={onEditCube}
+        onPortionUse={onPortionUse}
       />
       <StorageSection
         title="냉동고" icon={null} storageType="freezer"
         cubes={cubes} selections={selections} className="bg-blue-50/50"
         droppableId="shelf" onAddToPlate={onAddToPlate}
         onAddCube={() => onAddCube('freezer')} onEditCube={onEditCube}
+        onPortionUse={onPortionUse}
       />
       <StorageSection
         title="냉장고" icon={null} storageType="fridge"
         cubes={cubes} selections={selections} className="bg-blue-50/50"
         droppableId="shelf-fridge" onAddToPlate={onAddToPlate}
         onAddCube={() => onAddCube('fridge')} onEditCube={onEditCube}
+        onPortionUse={onPortionUse}
       />
     </div>
   );

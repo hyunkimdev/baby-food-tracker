@@ -98,7 +98,7 @@ interface WeeklyTableProps {
   onCellSelect: (date: string, mealType: MealType) => void;
   onRemoveOne: (id: string) => void;
   onDefrost: (meal: Meal) => void;
-  onUndoDefrost: (meal: Meal) => void;
+  onUnlock: (meal: Meal) => void;
   comboResults: CombinationResult[];
   comboLoading: boolean;
   settingsButton?: React.ReactNode;
@@ -106,7 +106,7 @@ interface WeeklyTableProps {
 
 export default function WeeklyTable({
   meals, selections, cubeMap, activeDate, activeMealType, hiddenMealTypes,
-  onCellSelect, onRemoveOne, onDefrost, onUndoDefrost, comboResults, comboLoading,
+  onCellSelect, onRemoveOne, onDefrost, onUnlock, comboResults, comboLoading,
   settingsButton,
 }: WeeklyTableProps) {
   const visibleMealTypes = MEAL_TYPES.filter(mt => !hiddenMealTypes.includes(mt));
@@ -174,7 +174,9 @@ export default function WeeklyTable({
   }
 
   function renderCellContent(date: string, mealType: MealType, category: CubeCategory) {
-    const isActive = date === activeDate && mealType === activeMealType;
+    const meal = mealLookup.get(`${date}__${mealType}`);
+    // Don't treat cell as active if meal is already used (locked)
+    const isActive = date === activeDate && mealType === activeMealType && meal?.status !== 'used';
 
     if (isActive) {
       const items = editingByCategory.get(category) ?? [];
@@ -201,30 +203,34 @@ export default function WeeklyTable({
     }
 
     // Show saved meal
-    const meal = mealLookup.get(`${date}__${mealType}`);
     if (!meal) return null;
 
     const isUsed = meal.status === 'used';
 
     const categoryCubes = meal.cubes.filter(cu => {
-      if (cu.category) return cu.category === category;
+      // Prefer live cube data for category (handles category changes in pantry/freezer/fridge)
       if (cu.cubeId) {
-        const cube = cubeMap.get(cu.cubeId);
-        if (cube) return cube.category === category;
+        const liveCube = cubeMap.get(cu.cubeId);
+        if (liveCube) return liveCube.category === category;
       }
+      if (cu.category) return cu.category === category;
       return false;
     });
 
     if (categoryCubes.length === 0) return null;
     return (
       <div className={`flex flex-wrap gap-1 items-center py-0.5 ${isUsed ? 'opacity-50' : ''}`}>
-        {categoryCubes.map((cu, i) => (
-          <CubeChip key={i} name={cu.name}>
-            {Array.from({ length: cu.quantity }).map((_, j) => (
-              <CubeBlock key={j} color={cu.color} weight={cu.weight} itemType={cu.itemType} />
-            ))}
-          </CubeChip>
-        ))}
+        {categoryCubes.map((cu, i) => {
+          // Use live cube data for color (handles color updates)
+          const liveCube = cu.cubeId ? cubeMap.get(cu.cubeId) : null;
+          return (
+            <CubeChip key={i} name={cu.name}>
+              {Array.from({ length: cu.quantity }).map((_, j) => (
+                <CubeBlock key={j} color={liveCube?.color ?? cu.color} weight={cu.weight} itemType={liveCube?.itemType ?? cu.itemType} />
+              ))}
+            </CubeChip>
+          );
+        })}
       </div>
     );
   }
@@ -296,20 +302,21 @@ export default function WeeklyTable({
                     </td>
                   )}
                   {weekDates.map(date => {
-                    const isActive = date === activeDate && mt === activeMealType;
-                    const isHovered = hoverSlot === `${date}__${mt}`;
                     const meal = mealLookup.get(`${date}__${mt}`);
-                    const isPlanned = meal?.status === 'planned' && !isActive;
+                    const isFocused = date === activeDate && mt === activeMealType;
+                    const isEditing = isFocused && meal?.status !== 'used';
+                    const isHovered = hoverSlot === `${date}__${mt}`;
+                    const isPlanned = meal?.status === 'planned' && !isEditing;
                     const content = renderCellContent(date, mt, cat);
                     const isFirst = catIdx === 0;
                     const cellHighlight = isHovered
                       ? `bg-orange-50/40 ${isFirst ? 'border-t-2 border-t-orange-300' : ''}`
-                      : isActive
+                      : isFocused
                         ? `bg-orange-50/30 ${isFirst ? 'border-t-2 border-t-orange-300' : ''}`
                         : 'hover:bg-gray-50';
-                    const plannedBg = isPlanned && !isHovered && !isActive ? 'bg-blue-50/20' : '';
-                    const leftHL = (isActive || isHovered) ? 'border-l-2 border-l-orange-300' : '';
-                    const rightHL = (isActive || isHovered) ? 'border-r-2 border-r-orange-300' : '';
+                    const plannedBg = isPlanned && !isHovered && !isFocused ? 'bg-blue-50/20' : '';
+                    const leftHL = (isFocused || isHovered) ? 'border-l-2 border-l-orange-300' : '';
+                    const rightHL = (isFocused || isHovered) ? 'border-r-2 border-r-orange-300' : '';
                     return [
                       <td
                         key={`${date}-emoji`}
@@ -337,13 +344,14 @@ export default function WeeklyTable({
               const summaryRow = (
                 <tr key={`${mt}-summary`} className={mtIdx % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}>
                   {weekDates.map(date => {
-                    const isActive = date === activeDate && mt === activeMealType;
-                    const isHovered = hoverSlot === `${date}__${mt}`;
                     const meal = mealLookup.get(`${date}__${mt}`);
+                    const isFocused = date === activeDate && mt === activeMealType;
+                    const isEditing = isFocused && meal?.status !== 'used';
+                    const isHovered = hoverSlot === `${date}__${mt}`;
 
-                    // Compute total weight: use selections for active cell, otherwise use saved meal
+                    // Compute total weight: use selections for editing cell, otherwise use saved meal
                     let totalWeight = 0;
-                    if (isActive) {
+                    if (isEditing) {
                       totalWeight = Object.entries(selections).reduce((sum, [id, qty]) => {
                         if (qty <= 0) return sum;
                         const cube = cubeMap.get(id);
@@ -353,18 +361,18 @@ export default function WeeklyTable({
                       totalWeight = meal.totalWeight;
                     }
 
-                    const hasCubes = isActive
+                    const hasCubes = isEditing
                       ? Object.values(selections).some(q => q > 0)
                       : (meal != null && meal.cubes.length > 0 && meal.totalWeight > 0);
                     const isPlanned = meal?.status === 'planned';
                     const isUsed = meal?.status === 'used';
                     const cellHighlight = isHovered
                       ? 'bg-orange-50/40 border-b-2 border-b-orange-300'
-                      : isActive
+                      : isFocused
                         ? 'bg-orange-50/30 border-b-2 border-b-orange-300'
                         : 'hover:bg-gray-50';
-                    const leftHL = (isActive || isHovered) ? 'border-l-2 border-l-orange-300' : '';
-                    const rightHL = (isActive || isHovered) ? 'border-r-2 border-r-orange-300' : '';
+                    const leftHL = (isFocused || isHovered) ? 'border-l-2 border-l-orange-300' : '';
+                    const rightHL = (isFocused || isHovered) ? 'border-r-2 border-r-orange-300' : '';
 
                     return (
                       <td
@@ -390,10 +398,10 @@ export default function WeeklyTable({
                             {isUsed && meal && (
                               <button
                                 type="button"
-                                onClick={(e) => { e.stopPropagation(); onUndoDefrost(meal); }}
+                                onClick={(e) => { e.stopPropagation(); onUnlock(meal); }}
                                 className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-400 text-white hover:bg-gray-500 transition-colors"
                               >
-                                사용 취소
+                                사용해제
                               </button>
                             )}
                           </div>
@@ -412,19 +420,19 @@ export default function WeeklyTable({
 
       {/* Combo results */}
       {(comboLoading || badCombos.length > 0 || goodCombos.length > 0) && (
-        <div className="flex items-center gap-4 flex-wrap px-1">
+        <div className="flex flex-wrap gap-x-3 gap-y-0.5 px-1">
           {comboLoading && (
             <div className="flex items-center gap-1.5 text-xs text-gray-400">
               <div className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-gray-200 border-t-blue-500" />
             </div>
           )}
           {badCombos.map((r, i) => (
-            <span key={`bad-${i}`} className="text-xs text-red-600 font-bold">
+            <span key={`bad-${i}`} className="text-xs text-red-600 font-bold whitespace-nowrap">
               <IconWarning className="inline" /> {r.ingredients[0]}+{r.ingredients[1]}: {r.message}
             </span>
           ))}
           {goodCombos.map((r, i) => (
-            <span key={`good-${i}`} className="text-xs text-green-600 font-bold">
+            <span key={`good-${i}`} className="text-xs text-green-600 font-bold whitespace-nowrap">
               <IconThumbUp className="inline" /> {r.ingredients[0]}+{r.ingredients[1]}: {r.message}
             </span>
           ))}
