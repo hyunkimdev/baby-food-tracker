@@ -29,9 +29,9 @@ export async function DELETE(
     await deleteCube(id);
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('Failed to archive cube:', error);
+    console.error('Failed to delete cube:', error);
     return NextResponse.json(
-      { error: 'Failed to archive cube' },
+      { error: 'Failed to delete cube' },
       { status: 500 }
     );
   }

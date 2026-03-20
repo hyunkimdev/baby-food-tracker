@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import useSWR from 'swr';
 import { DndContext, DragEndEvent } from '@dnd-kit/core';
 import type { Cube, CubeFormData, CombinationResult, MealType, Meal, StorageType } from '@/types';
@@ -64,7 +64,7 @@ export default function HomePage() {
 
   const categoryColors = getCategoryColors();
   // Always override cube color with settings category color — single source of truth
-  const cubeMap = new Map(cubes?.map((c) => [c.id, { ...c, color: categoryColors[c.category] ?? c.color }]) ?? []);
+  const cubeMap = useMemo(() => new Map(cubes?.map((c) => [c.id, { ...c, color: categoryColors[c.category] ?? c.color }]) ?? []), [cubes, categoryColors]);
   const cubeMapRef = useRef(cubeMap);
   cubeMapRef.current = cubeMap;
 
@@ -75,20 +75,22 @@ export default function HomePage() {
     .map(([id]) => cubeMap.get(id)?.name ?? currentMeal?.cubes.find(c => c.cubeId === id)?.name)
     .filter(Boolean) as string[];
 
+  const selectedNamesKey = selectedNames.join(',');
   useEffect(() => {
     if (selectedNames.length < 2) {
       setComboResults([]);
       return;
     }
     const controller = new AbortController();
-    const params = new URLSearchParams({ ingredients: selectedNames.join(',') });
+    const params = new URLSearchParams({ ingredients: selectedNamesKey });
     setComboLoading(true);
     fetch(`/api/combinations/check?${params}`, { signal: controller.signal })
       .then((res) => res.json())
       .then((data: CombinationResult[]) => { setComboResults(data); setComboLoading(false); })
       .catch((err) => { if (err.name !== 'AbortError') setComboLoading(false); });
     return () => controller.abort();
-  }, [selectedNames.join(',')]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedNamesKey]);
 
   // --- Auto-save with optimistic SWR update ---
   const autoSave = useCallback(async (
@@ -203,19 +205,10 @@ export default function HomePage() {
   };
 
   const handleSaveCube = async (data: CubeFormData, id?: string) => {
-    if (id) {
-      await fetch(`/api/cubes/${id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-    } else {
-      await fetch('/api/cubes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-    }
+    const res = id
+      ? await fetch(`/api/cubes/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) })
+      : await fetch('/api/cubes', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+    if (!res.ok) { alert('큐브 저장에 실패했어요.'); return; }
     // If converting from portion, deduct 1 from the source
     if (portionSource) {
       const newQty = portionSource.quantity - 1;
@@ -234,7 +227,8 @@ export default function HomePage() {
   };
 
   const handleDeleteCube = async (id: string) => {
-    await fetch(`/api/cubes/${id}`, { method: 'DELETE' });
+    const res = await fetch(`/api/cubes/${id}`, { method: 'DELETE' });
+    if (!res.ok) { alert('큐브 삭제에 실패했어요.'); return; }
     mutateCubes();
   };
 

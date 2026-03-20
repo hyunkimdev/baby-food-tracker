@@ -101,6 +101,7 @@ export default function CubeModal({ cube, cubeGroup, isOpen, onClose, onSave, on
       setStorage(defaultStorage ?? 'freezer');
       setSlots(emptySlots());
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cube, cubeGroup, portionSource, isOpen]);
 
   const updateSlot = (index: number, patch: Partial<WeightSlot>) => {

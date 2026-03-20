@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useDraggable, useDroppable, useDndMonitor } from '@dnd-kit/core';
 import type { Cube, CombinationResult, MealType, Meal, CubeCategory, ItemType } from '@/types';
 import { CATEGORIES, CATEGORY_EMOJI } from '@/lib/constants';
@@ -142,10 +142,13 @@ export default function WeeklyTable({
   });
 
   // Meal lookup
-  const mealLookup = new Map<string, Meal>();
-  for (const meal of meals) {
-    mealLookup.set(`${meal.date}__${meal.mealType}`, meal);
-  }
+  const mealLookup = useMemo(() => {
+    const map = new Map<string, Meal>();
+    for (const meal of meals) {
+      map.set(`${meal.date}__${meal.mealType}`, meal);
+    }
+    return map;
+  }, [meals]);
 
   // Group editing selections by category
   const editingByCategory = new Map<CubeCategory, { name: string; color: string; cubeId: string; weight: number; qty: number; itemType: ItemType }[]>();
