@@ -169,40 +169,34 @@ function StorageSection({
       ref={setNodeRef}
       className={`rounded-xl border border-gray-200 overflow-visible transition-colors ${className ?? ''} ${isOver ? 'ring-2 ring-blue-300' : ''}`}
     >
-      <div className="border-b border-gray-200 bg-white px-3 py-2 flex items-center justify-between">
-        <h3 className="text-sm font-bold text-gray-700">{icon} {title}</h3>
+      <div className="border-b border-gray-200 bg-white px-2 py-1 flex items-center justify-between">
+        <h3 className="text-xs font-bold text-gray-700">{icon} {title}</h3>
         <button
           type="button"
           onClick={onAddCube}
-          className="flex h-6 w-6 items-center justify-center rounded-full bg-blue-500 text-white text-xs font-bold hover:bg-blue-600"
+          className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500 text-white text-[10px] font-bold hover:bg-blue-600"
           title="추가"
         >+</button>
       </div>
-      <div className="p-2.5 space-y-2">
+      <div className="p-1.5 space-y-1">
         {grouped.map(({ cat, groups }) => {
-          // Filter to groups that actually have cubes with quantity > 0
           const nonEmptyGroups = groups.filter(g => g.reduce((s, c) => s + c.quantity, 0) > 0);
+          if (nonEmptyGroups.length === 0) return null;
           return (
             <div key={cat}>
-              <p className="mb-1 text-xs font-semibold text-gray-400">
+              <p className="mb-0.5 text-[10px] font-semibold text-gray-400">
                 {CATEGORY_EMOJI[cat]} {cat}
               </p>
-              {nonEmptyGroups.length > 0 ? (
-                <div className="flex flex-wrap gap-1.5">
-                  {nonEmptyGroups.map((cubeGroup) => (
-                    <ItemCard
-                      key={`${cubeGroup[0].name}__${cubeGroup[0].expiryDate ?? ''}`} cubes={cubeGroup} selections={selections}
-                      onAddToPlate={onAddToPlate}
-                      onEdit={() => onEditCube(cubeGroup[0])}
-                      onPortionUse={onPortionUse}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <div className="inline-flex items-center rounded-lg border border-dashed border-gray-300 bg-gray-50/50 px-3 py-1.5">
-                  <span className="text-[10px] text-gray-300">비어있음</span>
-                </div>
-              )}
+              <div className="flex flex-wrap gap-1">
+                {nonEmptyGroups.map((cubeGroup) => (
+                  <ItemCard
+                    key={`${cubeGroup[0].name}__${cubeGroup[0].expiryDate ?? ''}`} cubes={cubeGroup} selections={selections}
+                    onAddToPlate={onAddToPlate}
+                    onEdit={() => onEditCube(cubeGroup[0])}
+                    onPortionUse={onPortionUse}
+                  />
+                ))}
+              </div>
             </div>
           );
         })}

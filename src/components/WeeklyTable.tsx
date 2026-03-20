@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useImperativeHandle, forwardRef } from 'react';
 import { useDraggable, useDroppable, useDndMonitor } from '@dnd-kit/core';
 import type { Cube, CombinationResult, MealType, Meal, CubeCategory, ItemType } from '@/types';
 import { CATEGORIES, CATEGORY_EMOJI } from '@/lib/constants';
@@ -101,14 +101,17 @@ interface WeeklyTableProps {
   onUnlock: (meal: Meal) => void;
   comboResults: CombinationResult[];
   comboLoading: boolean;
-  settingsButton?: React.ReactNode;
 }
 
-export default function WeeklyTable({
+export interface WeeklyTableHandle {
+  shiftView: (days: number) => void;
+  goToday: () => void;
+}
+
+const WeeklyTable = forwardRef<WeeklyTableHandle, WeeklyTableProps>(function WeeklyTable({
   meals, selections, cubeMap, activeDate, activeMealType, hiddenMealTypes,
   onCellSelect, onRemoveOne, onDefrost, onUnlock, comboResults, comboLoading,
-  settingsButton,
-}: WeeklyTableProps) {
+}, ref) {
   const visibleMealTypes = MEAL_TYPES.filter(mt => !hiddenMealTypes.includes(mt));
 
   // viewStart is the first day shown in the 7-day window (always a Monday)
@@ -176,6 +179,8 @@ export default function WeeklyTable({
     setViewStart(getWeekDates(todayStr)[0]);
   }
 
+  useImperativeHandle(ref, () => ({ shiftView, goToday }));
+
   function renderCellContent(date: string, mealType: MealType, category: CubeCategory) {
     const meal = mealLookup.get(`${date}__${mealType}`);
     // Don't treat cell as active if meal is already used (locked)
@@ -239,30 +244,7 @@ export default function WeeklyTable({
   }
 
   return (
-    <div className="space-y-2">
-      {/* Week navigation + settings */}
-      <div className="flex items-center justify-between">
-        <div className="w-8" />
-        <div className="flex items-center gap-1">
-          <button type="button" onClick={() => shiftView(-7)} className="px-2 py-1.5 text-sm text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded" title="1주 전">
-            ◀◀
-          </button>
-          <button type="button" onClick={() => shiftView(-1)} className="px-2 py-1.5 text-base text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded" title="1일 전">
-            ◀
-          </button>
-          <button type="button" onClick={goToday} className="px-4 py-1.5 text-sm font-bold text-blue-600 hover:bg-blue-50 rounded">
-            오늘
-          </button>
-          <button type="button" onClick={() => shiftView(1)} className="px-2 py-1.5 text-base text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded" title="1일 후">
-            ▶
-          </button>
-          <button type="button" onClick={() => shiftView(7)} className="px-2 py-1.5 text-sm text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded" title="1주 후">
-            ▶▶
-          </button>
-        </div>
-        <div>{settingsButton}</div>
-      </div>
-
+    <div>
       {/* Table */}
       <div className="rounded-xl border border-gray-200 overflow-auto bg-white">
         <table className="w-full border-collapse table-fixed">
@@ -275,14 +257,14 @@ export default function WeeklyTable({
           </colgroup>
           <thead>
             <tr className="bg-gray-50">
-              <th className="border-b border-r border-gray-200 px-2 py-2 text-left text-xs font-semibold text-gray-400 w-14" />
+              <th className="border-b border-r border-gray-200 px-1 py-1 text-center text-[10px] font-semibold text-gray-400" />
               {weekDates.map(date => {
                 const { display, isToday, isSun, isSat } = formatDay(date);
                 return (
                   <th
                     key={date}
                     colSpan={2}
-                    className={`border-b border-r border-gray-200 px-2 py-2 text-center text-xs font-semibold ${
+                    className={`border-b border-r border-gray-200 px-1 py-1 text-center text-[11px] font-semibold ${
                       isToday ? 'bg-blue-50 text-blue-700' : isSun ? 'text-red-400' : isSat ? 'text-blue-400' : 'text-gray-500'
                     }`}
                   >
@@ -325,7 +307,7 @@ export default function WeeklyTable({
                         key={`${date}-emoji`}
                         onClick={() => onCellSelect(date, mt)}
                         className={`border-r border-gray-100 px-1 text-center text-sm cursor-pointer border-b ${cellHighlight} ${plannedBg} ${leftHL}`}
-                        style={{ height: 32, width: 28 }}
+                        style={{ height: 26, width: 28 }}
                       >
                         {CATEGORY_EMOJI[cat]}
                       </td>,
@@ -334,7 +316,7 @@ export default function WeeklyTable({
                         id={`plate__${date}__${mt}__${catIdx}`}
                         onClick={() => onCellSelect(date, mt)}
                         className={`border-r border-gray-200 px-1.5 cursor-pointer transition-colors align-middle border-b ${cellHighlight} ${plannedBg} ${rightHL}`}
-                        style={{ height: 32 }}
+                        style={{ height: 26 }}
                       >
                         {content}
                       </DroppableCell>,
@@ -381,8 +363,8 @@ export default function WeeklyTable({
                       <td
                         key={date}
                         colSpan={2}
-                        className={`border-r border-gray-200 border-b-2 px-1.5 py-0.5 text-center ${cellHighlight} ${leftHL} ${rightHL}`}
-                        style={{ height: 28 }}
+                        className={`border-r border-gray-200 border-b-2 px-1 py-0 text-center ${cellHighlight} ${leftHL} ${rightHL}`}
+                        style={{ height: 22 }}
                       >
                         {hasCubes && (
                           <div className="flex items-center justify-center gap-1">
@@ -443,4 +425,6 @@ export default function WeeklyTable({
       )}
     </div>
   );
-}
+});
+
+export default WeeklyTable;

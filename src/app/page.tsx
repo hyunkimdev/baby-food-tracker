@@ -5,10 +5,10 @@ import useSWR from 'swr';
 import { DndContext, DragEndEvent } from '@dnd-kit/core';
 import type { Cube, CubeFormData, CombinationResult, MealType, Meal, StorageType } from '@/types';
 import IngredientShelf from '@/components/IngredientShelf';
-import WeeklyTable from '@/components/WeeklyTable';
+import WeeklyTable, { type WeeklyTableHandle } from '@/components/WeeklyTable';
 import CubeModal from '@/components/CubeModal';
 import SettingsModal, { getHiddenMealTypes, getCategoryColors } from '@/components/SettingsModal';
-import { IconSettings } from '@/components/Icons';
+import { IconSettings, IconFullscreen, IconFullscreenExit } from '@/components/Icons';
 
 const fetcher = (url: string) => fetch(url).then((res) => res.json());
 
@@ -44,6 +44,23 @@ export default function HomePage() {
   const [portionSource, setPortionSource] = useState<Cube | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [hiddenMealTypes, setHiddenMealTypes] = useState<MealType[]>([]);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
+
+  const toggleFullscreen = useCallback(() => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+    } else {
+      document.documentElement.requestFullscreen();
+    }
+  }, []);
+
+  const tableRef = useRef<WeeklyTableHandle>(null);
 
   const editingMealIdRef = useRef<string | null>(null);
   editingMealIdRef.current = editingMealId;
@@ -420,18 +437,38 @@ export default function HomePage() {
 
   return (
     <DndContext onDragEnd={handleDragEnd}>
-      <div className="mx-auto max-w-[1600px] px-6 py-5 space-y-5">
-        <WeeklyTable
-          settingsButton={
-            <button
-              type="button"
-              onClick={() => setSettingsOpen(true)}
-              className="flex items-center gap-1 rounded-lg px-2.5 py-1.5 text-sm text-gray-400 hover:text-gray-600 hover:bg-gray-100"
-              title="설정"
-            >
+      <div className="mx-auto max-w-[1600px] px-4 py-2 space-y-2">
+        {/* Compact top toolbar */}
+        <div className="relative flex items-center justify-center">
+          <h1 className="absolute left-0 text-xs font-bold text-gray-500">이유식 큐브 트래커</h1>
+          <div className="flex items-center gap-1">
+            <button type="button" onClick={() => tableRef.current?.shiftView(-7)} className="px-1.5 py-0.5 text-[11px] text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded" title="1주 전">◀◀</button>
+            <button type="button" onClick={() => tableRef.current?.shiftView(-1)} className="px-1 py-0.5 text-sm text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded" title="1일 전">◀</button>
+            <button type="button" onClick={() => tableRef.current?.goToday()} className="px-2 py-0.5 text-[11px] font-bold text-blue-600 hover:bg-blue-50 rounded">오늘</button>
+            <button type="button" onClick={() => tableRef.current?.shiftView(1)} className="px-1 py-0.5 text-sm text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded" title="1일 후">▶</button>
+            <button type="button" onClick={() => tableRef.current?.shiftView(7)} className="px-1.5 py-0.5 text-[11px] text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded" title="1주 후">▶▶</button>
+          </div>
+          <div className="absolute right-0 flex items-center gap-0.5">
+            <button type="button" onClick={toggleFullscreen} className="flex items-center rounded px-1.5 py-1 text-sm text-gray-400 hover:text-gray-600 hover:bg-gray-100" title={isFullscreen ? '전체화면 해제' : '전체화면'}>
+              {isFullscreen ? <IconFullscreenExit /> : <IconFullscreen />}
+            </button>
+            <button type="button" onClick={() => setSettingsOpen(true)} className="flex items-center rounded px-1.5 py-1 text-sm text-gray-400 hover:text-gray-600 hover:bg-gray-100" title="설정">
               <IconSettings />
             </button>
-          }
+          </div>
+        </div>
+
+        <IngredientShelf
+          cubes={(cubes ?? []).map(c => ({ ...c, color: categoryColors[c.category] ?? c.color }))}
+          selections={selections}
+          onAddToPlate={addToPlateAndSave}
+          onAddCube={handleAddCube}
+          onEditCube={handleEditCube}
+          onPortionUse={handlePortionUse}
+        />
+
+        <WeeklyTable
+          ref={tableRef}
           meals={meals ?? []}
           selections={selections}
           cubeMap={cubeMap}
@@ -444,15 +481,6 @@ export default function HomePage() {
           onUnlock={handleUnlock}
           comboResults={comboResults}
           comboLoading={comboLoading}
-        />
-
-        <IngredientShelf
-          cubes={(cubes ?? []).map(c => ({ ...c, color: categoryColors[c.category] ?? c.color }))}
-          selections={selections}
-          onAddToPlate={addToPlateAndSave}
-          onAddCube={handleAddCube}
-          onEditCube={handleEditCube}
-          onPortionUse={handlePortionUse}
         />
       </div>
 
