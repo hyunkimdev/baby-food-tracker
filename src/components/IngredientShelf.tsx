@@ -207,7 +207,7 @@ function StorageSection({
 
 export default function IngredientShelf({ cubes, selections, onAddToPlate, onAddCube, onEditCube, onPortionUse }: IngredientShelfProps) {
   return (
-    <div className="grid grid-cols-3 gap-4">
+    <div className="grid gap-3" style={{ gridTemplateColumns: '3fr 5fr 2fr' }}>
       <StorageSection
         title="팬트리" icon={null} storageType="pantry"
         cubes={cubes} selections={selections} className="bg-blue-50/50"
